@@ -1,0 +1,31 @@
+version: "3.9"
+
+# =============================================================================
+#  Smart AI Travel Planner — Docker Compose
+#  Database: Supabase (external hosted PostgreSQL)
+#
+#  This compose file runs ONLY the FastAPI application.
+#  There is NO local Postgres container — Supabase is the database.
+#
+#  Prerequisites:
+#    1. Create a Supabase project at https://supabase.com
+#    2. Copy .env.example → .env and fill in all values
+#    3. Run: docker-compose up --build
+# =============================================================================
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    # No 'depends_on' — Supabase is external, always available
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - .:/app
+
+# No 'db' service — Supabase handles the database
+# No 'volumes' block needed — no local Postgres data to persist
