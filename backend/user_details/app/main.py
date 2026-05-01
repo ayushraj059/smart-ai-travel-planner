@@ -14,6 +14,15 @@ from .dynamodb import get_city_options
 
 app = FastAPI(title="User Details / Trip Planner Service", version="1.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://localhost(:\d+)?",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BUDGET_OPTIONS = [
     BudgetOption(label="Budget", description="Hostels, street food, public transport"),
     BudgetOption(label="Moderate", description="Mid-range hotels, local restaurants"),

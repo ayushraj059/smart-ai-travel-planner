@@ -37,3 +37,17 @@ class UserResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class SaveItineraryRequest(BaseModel):
+    itinerary_id: str
+    data: dict
+
+
+class ItinerarySummary(BaseModel):
+    itinerary_id: str
+    destination: str
+    start_date: str
+    end_date: str
+    num_days: int
+    saved_at: str

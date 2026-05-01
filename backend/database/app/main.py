@@ -17,6 +17,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Voyonata Travel Data API", version="1.0.0", lifespan=lifespan)
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://localhost(:\d+)?",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 def health():

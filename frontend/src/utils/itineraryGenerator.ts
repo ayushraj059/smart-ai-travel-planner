@@ -134,6 +134,9 @@ export function generateItinerary(params: TripParams): GeneratedItinerary {
     name: t.name,
     description: t.desc,
     category,
+    cost: 0,
+    currency: '',
+    duration_hours: 1,
   });
 
   const schedule: DayItinerary[] = [];
@@ -149,6 +152,7 @@ export function generateItinerary(params: TripParams): GeneratedItinerary {
         name: `Arrive in ${params.destination}`,
         description: 'Transfer to your accommodation, check in, and freshen up',
         category: 'Travel',
+        cost: 0, currency: '', duration_hours: 1,
       });
       const cat = selectedActivities[0];
       const picks = shuffle(activityTemplates[cat] || activityTemplates['Culture']).slice(0, 2);
@@ -164,6 +168,7 @@ export function generateItinerary(params: TripParams): GeneratedItinerary {
         name: `Depart from ${params.destination}`,
         description: 'Transfer to the airport and head home with wonderful memories',
         category: 'Travel',
+        cost: 0, currency: '', duration_hours: 1,
       });
     } else {
       const cat = selectedActivities[(i - 1) % selectedActivities.length];
@@ -186,7 +191,7 @@ export function generateItinerary(params: TripParams): GeneratedItinerary {
           ? `Departure Day`
           : `Exploring ${params.destination}`;
 
-    schedule.push({ day: i + 1, dateStr: formatDate(dayDate), title: dayTitle, activities });
+    schedule.push({ day: i + 1, dateStr: formatDate(dayDate), title: dayTitle, activities, dailyCost: 0 });
   }
 
   const budgetLabel: Record<BudgetType, string> = {
@@ -205,5 +210,9 @@ export function generateItinerary(params: TripParams): GeneratedItinerary {
     budget: budgetLabel[params.budget] as BudgetType,
     tags: selectedActivities,
     schedule,
+    hotels: [],
+    totalCostPerPerson: 0,
+    currency: '',
+    budgetStatus: '',
   };
 }

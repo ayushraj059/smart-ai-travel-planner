@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
-import { generateItinerary } from '../utils/itineraryGenerator';
-import { TripParams, BudgetType } from '../types';
+import { ragApi, weatherApi, itineraryApi, WeatherDay } from '../services/api';
+import { TripParams, BudgetType, GeneratedItinerary, WeatherInfo } from '../types';
 import {
   MapPin,
   Calendar,
@@ -11,6 +11,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Wallet,
+  Cloud,
 } from 'lucide-react';
 
 const ACTIVITY_OPTIONS = [
@@ -67,6 +68,23 @@ export default function PlanTripPage() {
   const [params, setParams] = useState<TripParams>(defaultParams);
   const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [apiError, setApiError] = useState('');
+  const [previewWeather, setPreviewWeather] = useState<WeatherDay[]>([]);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+
+  useEffect(() => {
+    if (!params.destination.trim() || !params.startDate || !params.endDate) {
+      setPreviewWeather([]);
+      return;
+    }
+    let cancelled = false;
+    setWeatherLoading(true);
+    weatherApi.getWeather(params.destination, params.startDate, params.endDate)
+      .then(days => { if (!cancelled) setPreviewWeather(days); })
+      .catch(() => { if (!cancelled) setPreviewWeather([]); })
+      .finally(() => { if (!cancelled) setWeatherLoading(false); });
+    return () => { cancelled = true; };
+  }, [params.destination, params.startDate, params.endDate]);
 
   const toggleActivity = (a: string) => {
     setParams(p => ({
@@ -110,13 +128,90 @@ export default function PlanTripPage() {
   };
 
   const handleGenerate = async () => {
+    setApiError('');
     setGenerating(true);
-    await new Promise(r => setTimeout(r, 2200));
-    const itinerary = generateItinerary(params);
-    const trips = JSON.parse(localStorage.getItem('voyonata_trips') || '[]');
-    trips.push(itinerary);
-    localStorage.setItem('voyonata_trips', JSON.stringify(trips));
-    navigate(`/itinerary/${itinerary.id}`);
+    try {
+      // Reuse already-fetched preview weather; re-fetch only if somehow empty
+      const weatherDays: WeatherDay[] = previewWeather.length > 0
+        ? previewWeather
+        : await weatherApi.getWeather(params.destination, params.startDate, params.endDate).catch(() => []);
+
+      const ragResponse = await ragApi.generateItinerary({
+        city: params.destination.toLowerCase(),
+        start_date: params.startDate,
+        end_date: params.endDate,
+        num_travelers: params.travelers,
+        budget_preference: params.budget,
+        activity_preferences: params.activities,
+        food_preferences: params.foodPreferences.length > 0 ? params.foodPreferences : ['No Preference'],
+        weather_forecast: weatherDays.map(w => ({
+          date: w.date,
+          description: w.description,
+          icon: w.icon,
+          temp_max: w.tempMax,
+          temp_min: w.tempMin,
+        })),
+      });
+
+      const weatherMap: Record<string, WeatherInfo> = {};
+      for (const w of weatherDays) {
+        const { date, ...info } = w;
+        weatherMap[date] = info;
+      }
+
+      const itinerary: GeneratedItinerary = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        destination: params.destination,
+        startDate: ragResponse.start_date,
+        endDate: ragResponse.end_date,
+        numDays: ragResponse.num_days,
+        travelers: ragResponse.num_travelers,
+        budget: ragResponse.budget_preference as BudgetType,
+        tags: ragResponse.summary.highlights,
+        totalCostPerPerson: ragResponse.summary.total_estimated_cost_per_person,
+        currency: ragResponse.summary.currency,
+        budgetStatus: ragResponse.summary.budget_status,
+        schedule: ragResponse.days.map(d => ({
+          day: d.day,
+          dateStr: d.date,
+          title: d.theme,
+          dailyCost: d.daily_cost_per_person,
+          weather: weatherMap[d.date],
+          activities: d.activities.map(a => ({
+            time: a.time,
+            name: a.place_name,
+            description: a.notes,
+            category: a.category,
+            cost: a.estimated_cost_per_person,
+            currency: a.currency,
+            duration_hours: a.duration_hours,
+            cuisine: a.cuisine,
+            rating: a.rating,
+            famous_dishes: a.famous_dishes ?? [],
+          })),
+        })),
+        hotels: (ragResponse.recommended_hotels || []).map(h => ({
+          name: h.name,
+          notes: h.notes,
+          costPerNight: h.estimated_cost_per_person_per_night,
+          currency: h.currency,
+          stars: h.stars,
+        })),
+        destinationOverview: ragResponse.destination_overview,
+      };
+
+      const trips = JSON.parse(localStorage.getItem('voyonata_trips') || '[]');
+      trips.push(itinerary);
+      localStorage.setItem('voyonata_trips', JSON.stringify(trips));
+      const token = localStorage.getItem('voyonata_token');
+      if (token) {
+        itineraryApi.save(token, itinerary.id, itinerary).catch(() => {});
+      }
+      navigate(`/itinerary/${itinerary.id}`);
+    } catch (err) {
+      setApiError((err as Error).message);
+      setGenerating(false);
+    }
   };
 
   return (
@@ -197,6 +292,36 @@ export default function PlanTripPage() {
                   )}
                 </div>
               </div>
+
+              {/* Weather forecast preview — shown as soon as destination + dates are filled */}
+              {(weatherLoading || previewWeather.length > 0) && (
+                <div>
+                  <p className="text-xs text-slate-500 mb-2 flex items-center gap-1.5">
+                    <Cloud size={11} /> Weather forecast for your trip
+                  </p>
+                  {weatherLoading ? (
+                    <div className="flex items-center gap-2 text-slate-500 text-xs">
+                      <div className="w-3 h-3 border border-slate-500 border-t-transparent rounded-full animate-spin" />
+                      Fetching forecast…
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {previewWeather.map(w => (
+                        <div
+                          key={w.date}
+                          className="flex-shrink-0 bg-navy-700 border border-navy-500 rounded-xl px-3 py-2.5 text-center min-w-[72px]"
+                        >
+                          <p className="text-xs text-slate-500 mb-1">{w.date.slice(5)}</p>
+                          <p className="text-xl leading-none mb-1">{w.icon}</p>
+                          <p className="text-white text-xs font-semibold">{w.tempMax}°</p>
+                          <p className="text-slate-500 text-xs">{w.tempMin}°</p>
+                          <p className="text-slate-500 text-xs mt-1 leading-tight truncate max-w-[60px]">{w.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-3">
@@ -361,6 +486,14 @@ export default function PlanTripPage() {
                 <Sparkles size={16} />
                 Generate My Itinerary
               </button>
+            </div>
+          )}
+
+          {/* ── API error ── */}
+          {apiError && !generating && (
+            <div className="mb-4 flex items-start gap-2.5 p-3.5 bg-red-500/10 border border-red-500/25 rounded-xl text-red-400 text-sm">
+              <span className="shrink-0 mt-0.5">⚠</span>
+              <span>{apiError}</span>
             </div>
           )}
 

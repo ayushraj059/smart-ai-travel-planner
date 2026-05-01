@@ -1,5 +1,8 @@
+import json
 import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from datetime import datetime, timezone
 from typing import Optional
 from .config import settings
 
@@ -107,3 +110,83 @@ def create_user(email: str, hashed_password: str, full_name: str, created_at: st
         ConditionExpression="attribute_not_exists(email)",
     )
     return item
+
+
+# ── Itinerary persistence ──────────────────────────────────────────────────────
+
+ITINERARY_TABLE_NAME = "user_itineraries"
+
+
+def get_itinerary_table():
+    return _get_resource().Table(ITINERARY_TABLE_NAME)
+
+
+def create_itinerary_table_if_not_exists():
+    dynamodb = _get_resource()
+    existing = [t.name for t in dynamodb.tables.all()]
+    if ITINERARY_TABLE_NAME in existing:
+        return dynamodb.Table(ITINERARY_TABLE_NAME)
+    table = dynamodb.create_table(
+        TableName=ITINERARY_TABLE_NAME,
+        KeySchema=[
+            {"AttributeName": "user_email", "KeyType": "HASH"},
+            {"AttributeName": "itinerary_id", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "user_email", "AttributeType": "S"},
+            {"AttributeName": "itinerary_id", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    table.wait_until_exists()
+    return table
+
+
+def upsert_itinerary(email: str, itinerary_id: str, data: dict) -> None:
+    table = get_itinerary_table()
+    table.put_item(Item={
+        "user_email": email.lower(),
+        "itinerary_id": itinerary_id,
+        "data": json.dumps(data, default=str),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def delete_itinerary_record(email: str, itinerary_id: str) -> None:
+    table = get_itinerary_table()
+    table.delete_item(Key={
+        "user_email": email.lower(),
+        "itinerary_id": itinerary_id,
+    })
+
+
+def list_itineraries(email: str) -> list[dict]:
+    table = get_itinerary_table()
+    response = table.query(KeyConditionExpression=Key("user_email").eq(email.lower()))
+    items = []
+    for item in response.get("Items", []):
+        try:
+            data = json.loads(item["data"])
+            items.append({
+                "itinerary_id": item["itinerary_id"],
+                "destination": data.get("destination", ""),
+                "start_date": data.get("startDate", ""),
+                "end_date": data.get("endDate", ""),
+                "num_days": data.get("numDays", 0),
+                "saved_at": item.get("saved_at", ""),
+            })
+        except Exception:
+            continue
+    return items
+
+
+def get_itinerary_data(email: str, itinerary_id: str) -> Optional[dict]:
+    table = get_itinerary_table()
+    response = table.get_item(Key={
+        "user_email": email.lower(),
+        "itinerary_id": itinerary_id,
+    })
+    item = response.get("Item")
+    if not item:
+        return None
+    return json.loads(item["data"])

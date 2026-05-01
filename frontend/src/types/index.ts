@@ -15,11 +15,39 @@ export interface TripParams {
   foodPreferences: string[];
 }
 
+export interface DestinationOverview {
+  weather_summary: string;
+  must_visit_places: string[];
+  local_dishes: string[];
+  culture_insight: string;
+}
+
+export interface WeatherInfo {
+  icon: string;
+  description: string;
+  tempMax: number;
+  tempMin: number;
+}
+
 export interface Activity {
   time: string;
   name: string;
   description: string;
   category: string;
+  cost: number;
+  currency: string;
+  duration_hours: number;
+  cuisine?: string;
+  rating?: number;
+  famous_dishes?: string[];
+}
+
+export interface HotelRecommendation {
+  name: string;
+  notes: string;
+  costPerNight: number;
+  currency: string;
+  stars?: number;
 }
 
 export interface DayItinerary {
@@ -27,6 +55,8 @@ export interface DayItinerary {
   dateStr: string;
   title: string;
   activities: Activity[];
+  dailyCost: number;
+  weather?: WeatherInfo;
 }
 
 export interface GeneratedItinerary {
@@ -39,4 +69,9 @@ export interface GeneratedItinerary {
   budget: BudgetType;
   tags: string[];
   schedule: DayItinerary[];
+  hotels: HotelRecommendation[];
+  totalCostPerPerson: number;
+  currency: string;
+  budgetStatus: string;
+  destinationOverview?: DestinationOverview;
 }

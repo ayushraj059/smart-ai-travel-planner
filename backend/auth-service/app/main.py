@@ -1,39 +1,37 @@
-import random
-import time
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError
 from botocore.exceptions import ClientError
 
 from .dynamodb import (
-    create_table_if_not_exists,
-    create_otp_table_if_not_exists,
-    get_user,
-    create_user,
-    store_pending_otp,
-    get_pending_otp,
-    delete_pending_otp,
+    create_table_if_not_exists, get_user, create_user,
+    create_itinerary_table_if_not_exists,
+    upsert_itinerary, delete_itinerary_record, list_itineraries, get_itinerary_data,
 )
 from .security import hash_password, verify_password, create_access_token, decode_access_token
-from .email_sender import send_otp_email
-from .models import SignupRequest, LoginRequest, VerifyOtpRequest, TokenResponse, UserResponse, MessageResponse
-from .config import settings
-
-_executor = ThreadPoolExecutor(max_workers=4)
+from .models import SignupRequest, LoginRequest, TokenResponse, UserResponse, SaveItineraryRequest, ItinerarySummary
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_table_if_not_exists()
-    create_otp_table_if_not_exists()
+    create_itinerary_table_if_not_exists()
     yield
 
 
-app = FastAPI(title="Auth Service", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Auth Service", version="1.0.0", lifespan=lifespan, debug=True)
 bearer_scheme = HTTPBearer()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://localhost(:\d+)?",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -41,62 +39,36 @@ def health():
     return {"status": "ok", "service": "auth"}
 
 
-@app.post("/signup", response_model=MessageResponse, status_code=202)
+@app.post("/signup", response_model=TokenResponse, status_code=201)
 def signup(body: SignupRequest):
-    if get_user(body.email):
+    try:
+        existing = get_user(body.email)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB read error: {e}")
+
+    if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    otp = str(random.randint(100000, 999999))
-    hashed_otp = hash_password(otp)
     hashed_pw = hash_password(body.password)
-    expires_at = int(time.time()) + settings.otp_expire_minutes * 60
-
-    store_pending_otp(
-        email=body.email,
-        hashed_otp=hashed_otp,
-        hashed_password=hashed_pw,
-        full_name=body.full_name,
-        expires_at=expires_at,
-    )
-
-    try:
-        send_otp_email(to_email=body.email, otp=otp)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to send OTP email. Check SMTP settings.")
-
-    return MessageResponse(message=f"OTP sent to {body.email}. It expires in {settings.otp_expire_minutes} minutes.")
-
-
-@app.post("/verify-otp", response_model=UserResponse, status_code=201)
-def verify_otp(body: VerifyOtpRequest):
-    pending = get_pending_otp(body.email)
-
-    if not pending:
-        raise HTTPException(status_code=404, detail="No pending signup for this email. Please sign up first.")
-
-    if int(time.time()) > int(pending["expires_at"]):
-        delete_pending_otp(body.email)
-        raise HTTPException(status_code=410, detail="OTP has expired. Please sign up again.")
-
-    if not verify_password(body.otp, pending["hashed_otp"]):
-        raise HTTPException(status_code=400, detail="Invalid OTP.")
-
-    delete_pending_otp(body.email)
-
     created_at = datetime.now(timezone.utc).isoformat()
+
     try:
-        user = create_user(
+        create_user(
             email=body.email,
-            hashed_password=pending["hashed_password"],
-            full_name=pending["full_name"],
+            hashed_password=hashed_pw,
+            full_name=body.full_name,
             created_at=created_at,
         )
     except ClientError as e:
-        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+        code = e.response["Error"]["Code"]
+        if code == "ConditionalCheckFailedException":
             raise HTTPException(status_code=409, detail="Email already registered")
-        raise HTTPException(status_code=500, detail="Could not create user")
+        raise HTTPException(status_code=500, detail=f"DB write error: {code} - {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
-    return UserResponse(email=user["email"], full_name=user["full_name"], created_at=user["created_at"])
+    token = create_access_token({"sub": body.email.lower()})
+    return TokenResponse(access_token=token)
 
 
 @app.post("/login", response_model=TokenResponse)
@@ -107,6 +79,17 @@ def login(body: LoginRequest):
 
     token = create_access_token({"sub": user["email"]})
     return TokenResponse(access_token=token)
+
+
+def _require_email(credentials: HTTPAuthorizationCredentials) -> str:
+    try:
+        payload = decode_access_token(credentials.credentials)
+        email: str = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return email
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
 @app.get("/me", response_model=UserResponse)
@@ -124,3 +107,32 @@ def me(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
         raise HTTPException(status_code=404, detail="User not found")
 
     return UserResponse(email=user["email"], full_name=user["full_name"], created_at=user["created_at"])
+
+
+# ── Itinerary CRUD ─────────────────────────────────────────────────────────────
+
+@app.get("/itineraries", response_model=list[ItinerarySummary])
+def get_itineraries(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = _require_email(credentials)
+    return list_itineraries(email)
+
+
+@app.post("/itineraries", status_code=201)
+def save_itinerary(body: SaveItineraryRequest, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = _require_email(credentials)
+    upsert_itinerary(email, body.itinerary_id, body.data)
+    return {"itinerary_id": body.itinerary_id}
+
+
+@app.put("/itineraries/{itinerary_id}")
+def update_itinerary(itinerary_id: str, body: SaveItineraryRequest, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = _require_email(credentials)
+    upsert_itinerary(email, itinerary_id, body.data)
+    return {"message": "updated"}
+
+
+@app.delete("/itineraries/{itinerary_id}")
+def delete_itinerary(itinerary_id: str, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    email = _require_email(credentials)
+    delete_itinerary_record(email, itinerary_id)
+    return {"message": "deleted"}

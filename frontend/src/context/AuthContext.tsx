@@ -1,9 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-
-interface StoredUser extends User {
-  password: string;
-}
+import { authApi } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -20,45 +17,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('voyonata_user');
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem('voyonata_user');
+    const token = localStorage.getItem('voyonata_token');
+    if (token) {
+      authApi.me(token)
+        .then(data => {
+          const u: User = { name: data.full_name, email: data.email };
+          setUser(u);
+          localStorage.setItem('voyonata_user', JSON.stringify(u));
+        })
+        .catch(() => {
+          localStorage.removeItem('voyonata_token');
+          localStorage.removeItem('voyonata_user');
+        })
+        .finally(() => setIsLoading(false));
+    } else {
+      const stored = localStorage.getItem('voyonata_user');
+      if (stored) {
+        try { setUser(JSON.parse(stored)); } catch { localStorage.removeItem('voyonata_user'); }
       }
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    const users: StoredUser[] = JSON.parse(localStorage.getItem('voyonata_users') || '[]');
-    const found = users.find(u => u.email === email && u.password === password);
-    if (!found) return false;
-
-    const userData: User = { name: found.name, email: found.email };
-    setUser(userData);
-    localStorage.setItem('voyonata_user', JSON.stringify(userData));
-    return true;
+    try {
+      const { access_token } = await authApi.login(email, password);
+      localStorage.setItem('voyonata_token', access_token);
+      const data = await authApi.me(access_token);
+      const u: User = { name: data.full_name, email: data.email };
+      setUser(u);
+      localStorage.setItem('voyonata_user', JSON.stringify(u));
+      return true;
+    } catch {
+      return false;
+    }
   };
 
-  const signup = async (name: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    const users: StoredUser[] = JSON.parse(localStorage.getItem('voyonata_users') || '[]');
-    if (users.find(u => u.email === email)) {
-      return { success: false, error: 'An account with this email already exists.' };
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { access_token } = await authApi.signup(email, password, name);
+      localStorage.setItem('voyonata_token', access_token);
+      const data = await authApi.me(access_token);
+      const u: User = { name: data.full_name, email: data.email };
+      setUser(u);
+      localStorage.setItem('voyonata_user', JSON.stringify(u));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
     }
-
-    users.push({ name, email, password });
-    localStorage.setItem('voyonata_users', JSON.stringify(users));
-
-    const userData: User = { name, email };
-    setUser(userData);
-    localStorage.setItem('voyonata_user', JSON.stringify(userData));
-    return { success: true };
   };
 
   const logout = () => {
     setUser(null);
+    localStorage.removeItem('voyonata_token');
     localStorage.removeItem('voyonata_user');
   };
 

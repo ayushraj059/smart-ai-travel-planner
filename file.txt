@@ -138,4 +138,63 @@ Firstly whatever data is there in dynamodb you have to convert it into embedding
 
 - Create a function inside of @backend/rag/app/embeddings.py to convert the user details which are entered by users from @backend/user_details/app/main
 
-- Now we are at the last stage of the rag pipeline in which 
+- Now we are at the last stage of the rag pipeline in which the embeddings of the user query from @backend/rag/app/embeddings.py is compared with the vector embeddings of pinecone database retrieve the top-K most relevant places based on semantic similarity.
+- The retrieved results are then passed to a reasoning layer powered by an open-source LLM Groq  to generate a structured, day-wise travel itinerary.
+- The LLM processes both user constraints (budget, duration, preferences) and retrieved contextual data to perform intelligent decision-making, including filtering, ranking, and sequencing of locations while minimizing travel distance and ensuring feasibility.
+- A post-processing validation layer is applied to enforce constraints such as time overlap, budget limits, and logical ordering, ensuring the final itinerary is realistic and executable.
+- The final output is returned as a structured JSON response containing a detailed itinerary along with summary insights such as estimated cost and budget status.
+
+
+Prompt 7:
+You are a fullstack developer.
+Your task is to connect the @frontend with @backend.
+- In the backend there are 4 microservices as @auth-service , @database , @rag , @user_details.
+- Containerize the 4 microservices in docker.
+
+Prompt 8:
+I want you to refine the response given to user.
+Firstly the response is like this : 
+"Mumbai
+2026-04-28 – 2026-05-02
+5 days
+3 travelers
+Moderate
+Exploring Mumbai's iconic landmarks
+Savoring diverse cuisine at renowned restaurants
+Relaxing at a luxurious hotel
+Day 1
+Day 2
+Day 3
+Day 4
+Day 5
+Mumbai Culture
+2026-04-28
+09:00
+Chhatrapati Shivaji Maharaj Terminus
+
+Start the day with a visit to this iconic railway station
+
+attraction
+11:00
+Leopold Cafe
+
+Enjoy lunch at this popular cafe
+
+restaurant
+14:00
+Gateway of India
+
+Explore this historic landmark
+
+attraction
+19:00
+Trishna
+
+Savor seafood dinner at this renowned restaurant "
+
+and this was the first day , but where is hotel recommendation here??
+you should either make a tab where hotels can be displayed based on our choice of budget.
+
+- Budget optimization should be done. If it is low then everythingsuggested should be within that budget. If the buget is high eveything should be within that budget
+
+- Secondly use some weather api to showcase the weather at that particular day for eg clear or raining or sunny etc.

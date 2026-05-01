@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "voyonata-travel"
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dim: int = 384
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

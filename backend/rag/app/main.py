@@ -6,7 +6,12 @@ from contextlib import asynccontextmanager
 from .dynamodb import scan_all_places
 from .embeddings import build_document, embed_texts, embed_one, embed_user_plan, build_user_query
 from .pinecone_client import upsert_places, query_index
-from .models import IndexResponse, SearchRequest, TripPlanSearchRequest, SearchResponse, PlaceResult
+from .itinerary import build_itinerary
+from .validator import validate_and_fix
+from .models import (
+    IndexResponse, SearchRequest, TripPlanSearchRequest, SearchResponse,
+    PlaceResult, ItineraryRequest, ItineraryResponse,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -19,6 +24,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Voyonata RAG Pipeline", version="1.0.0", lifespan=lifespan)
+
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://localhost(:\d+)?",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -130,4 +144,33 @@ def search_by_plan(req: TripPlanSearchRequest):
         raise
     except Exception as e:
         log.error(f"Plan search failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/itinerary", response_model=ItineraryResponse)
+def generate_itinerary(req: ItineraryRequest):
+    """
+    Full RAG pipeline endpoint:
+      1. Embed user trip plan → retrieve top-30 relevant places from Pinecone
+      2. Pass retrieved places + constraints to Groq LLM → day-wise itinerary JSON
+      3. Validate: sort by time, resolve overlaps, recalculate costs & budget_status
+      4. Return structured ItineraryResponse
+    """
+    try:
+        plan = req.model_dump()
+        log.info(f"Generating itinerary for {req.city} ({req.start_date} → {req.end_date})")
+
+        itinerary = build_itinerary(plan)
+        itinerary = validate_and_fix(itinerary, plan)
+
+        log.info(
+            f"Itinerary ready — {itinerary.num_days} days, "
+            f"{sum(len(d.activities) for d in itinerary.days)} activities, "
+            f"status={itinerary.summary.budget_status}"
+        )
+        return itinerary
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Itinerary generation failed: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
