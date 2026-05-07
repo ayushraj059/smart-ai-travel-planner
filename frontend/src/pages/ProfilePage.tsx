@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Sidebar from '../components/layout/Sidebar';
 import { useAuth } from '../context/AuthContext';
-import { User, Mail, Save } from 'lucide-react';
+import { User, Mail, Save, Check } from 'lucide-react';
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
@@ -30,6 +30,17 @@ export default function ProfilePage() {
           </div>
 
           <div className="bg-navy-600 border border-navy-400 rounded-xl p-6">
+            <div className="flex items-center gap-4 mb-6 pb-6 border-b border-navy-400">
+              <div className="w-14 h-14 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center shrink-0">
+                <span className="text-indigo-300 font-bold text-xl">
+                  {(name || user?.name || '?')[0].toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-white font-medium">{name || user?.name}</p>
+                <p className="text-slate-500 text-xs mt-0.5">{user?.email}</p>
+              </div>
+            </div>
             <form onSubmit={handleSave} className="space-y-5">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">
@@ -59,9 +70,9 @@ export default function ProfilePage() {
 
               <button
                 type="submit"
-                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition-colors"
+                className={`flex items-center gap-2 px-5 py-2.5 text-white text-sm font-medium rounded-xl transition-colors ${saved ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-500'}`}
               >
-                <Save size={14} />
+                {saved ? <Check size={14} /> : <Save size={14} />}
                 {saved ? 'Saved!' : 'Save Changes'}
               </button>
             </form>
