@@ -27,7 +27,7 @@ const themeOptions: { key: Theme; icon: typeof Sun; label: string }[] = [
 ];
 
 export default function Sidebar() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [theme, setTheme] = useState<Theme>('system');
 
@@ -69,6 +69,16 @@ export default function Sidebar() {
 
       {/* Bottom */}
       <div className="px-2.5 pb-4 space-y-2 border-t border-navy-400 pt-3">
+        {user && (
+          <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
+            <div className="w-7 h-7 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center shrink-0">
+              <span className="text-indigo-300 text-xs font-bold">
+                {user.name[0].toUpperCase()}
+              </span>
+            </div>
+            <p className="text-slate-300 text-xs font-medium truncate">{user.name}</p>
+          </div>
+        )}
         <button
           onClick={() => { logout(); navigate('/login'); }}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-slate-200 hover:bg-navy-500 w-full transition-all"
