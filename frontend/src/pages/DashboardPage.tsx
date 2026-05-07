@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Sidebar from '../components/layout/Sidebar';
-import { Plane, Shield, Fingerprint, Compass, User, Search, Cloud } from 'lucide-react';
+import { Plane, MapPin as DestIcon, Calendar as DaysIcon, Compass, User, Search, Cloud } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { GeneratedItinerary } from '../types';
 import { weatherApi, WeatherDay, localDateStr } from '../services/api';
@@ -138,10 +138,14 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [tripCount, setTripCount] = useState(0);
+  const [daysPlanned, setDaysPlanned] = useState(0);
+  const [destinationsCount, setDestinationsCount] = useState(0);
 
   useEffect(() => {
     const trips: GeneratedItinerary[] = JSON.parse(localStorage.getItem('voyonata_trips') || '[]');
     setTripCount(trips.length);
+    setDaysPlanned(trips.reduce((sum, t) => sum + (t.numDays || 0), 0));
+    setDestinationsCount(new Set(trips.map(t => t.destination.toLowerCase())).size);
   }, []);
 
   const statCards = [
@@ -153,18 +157,18 @@ export default function DashboardPage() {
       label: 'Trips Planned',
     },
     {
-      icon: Shield,
+      icon: DestIcon,
       iconBg: 'bg-emerald-500/20',
       iconColor: 'text-emerald-400',
-      value: 'Active',
-      label: 'Security Status',
+      value: String(destinationsCount),
+      label: 'Destinations',
     },
     {
-      icon: Fingerprint,
+      icon: DaysIcon,
       iconBg: 'bg-violet-500/20',
       iconColor: 'text-violet-400',
-      value: '—',
-      label: 'Passkeys Registered',
+      value: String(daysPlanned),
+      label: 'Days Planned',
     },
   ];
 
@@ -176,6 +180,14 @@ export default function DashboardPage() {
       title: 'Plan a Trip',
       desc: 'Generate your perfect itinerary',
       to: '/plan',
+    },
+    {
+      icon: Plane,
+      iconBg: 'bg-indigo-500/20',
+      iconColor: 'text-indigo-400',
+      title: 'My Trips',
+      desc: 'View all your planned adventures',
+      to: '/trips',
     },
     {
       icon: User,
@@ -225,7 +237,7 @@ export default function DashboardPage() {
           <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
             Quick Actions
           </h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             {actionCards.map(({ icon: Icon, iconBg, iconColor, title, desc, to }) => (
               <button
                 key={title}

@@ -116,6 +116,12 @@ function ActivityForm({
           >
             <option value="attraction">Attraction</option>
             <option value="restaurant">Restaurant</option>
+            <option value="Beaches">Beaches</option>
+            <option value="Nightlife">Nightlife</option>
+            <option value="Adventure">Adventure</option>
+            <option value="Shopping">Shopping</option>
+            <option value="Nature">Nature</option>
+            <option value="Culture">Culture</option>
           </select>
         </div>
       </div>

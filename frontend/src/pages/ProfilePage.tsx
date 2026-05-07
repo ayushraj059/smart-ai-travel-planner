@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { User, Mail, Save } from 'lucide-react';
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [saved, setSaved] = useState(false);
 
@@ -14,6 +14,7 @@ export default function ProfilePage() {
     const stored = JSON.parse(localStorage.getItem('voyonata_user') || '{}');
     stored.name = name;
     localStorage.setItem('voyonata_user', JSON.stringify(stored));
+    updateUser({ name });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };

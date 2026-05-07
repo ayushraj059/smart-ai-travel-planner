@@ -267,6 +267,7 @@ export default function PlanTripPage() {
                   <input
                     type="date"
                     value={params.startDate}
+                    min={new Date().toISOString().split('T')[0]}
                     onChange={e => setParams(p => ({ ...p, startDate: e.target.value }))}
                     className="w-full px-4 py-3 bg-navy-600 border border-navy-400 rounded-xl text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition-all text-sm"
                   />

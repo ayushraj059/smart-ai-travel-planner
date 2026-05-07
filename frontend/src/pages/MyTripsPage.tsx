@@ -80,9 +80,16 @@ export default function MyTripsPage() {
                         ))}
                       </div>
                     </div>
-                    <span className="text-xs font-medium px-2.5 py-1 bg-indigo-600/20 text-indigo-300 rounded-lg border border-indigo-500/20">
-                      {trip.budget}
-                    </span>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-medium px-2.5 py-1 bg-indigo-600/20 text-indigo-300 rounded-lg border border-indigo-500/20 block mb-1.5">
+                        {trip.budget}
+                      </span>
+                      {(trip.totalCostPerPerson ?? 0) > 0 && (
+                        <p className="text-xs text-slate-400 text-right">
+                          {trip.currency} {trip.totalCostPerPerson.toLocaleString(undefined, { maximumFractionDigits: 0 })}<span className="text-slate-600">/person</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))}

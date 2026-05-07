@@ -7,6 +7,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  updateUser: (patch: Partial<User>) => void;
   isLoading: boolean;
 }
 
@@ -77,8 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('voyonata_user');
   };
 
+  const updateUser = (patch: Partial<User>) => {
+    setUser(prev => prev ? { ...prev, ...patch } : prev);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
