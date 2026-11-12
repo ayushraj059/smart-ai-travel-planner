@@ -220,84 +220,6 @@ The generated travel plans can be accessed through the My Trips page.
 
 ---
 
-## 6. Challenges and Solutions
-
-During the development of Travora, several important engineering challenges were addressed.
-
-### Challenge 1: Generating Context-Aware Travel Recommendations
-
-**Problem:**
-
-Directly prompting an LLM to generate travel itineraries can result in irrelevant recommendations or places that are not present in the application's travel dataset.
-
-**Solution:**
-
-Implemented a RAG pipeline that retrieves relevant travel information from Pinecone before generating the final response.
-
-The retrieved context is passed to the Groq LLM to generate more relevant and grounded itineraries.
-
-### Challenge 2: Implementing Semantic Search
-
-**Problem:**
-
-Traditional keyword-based searches may fail to identify relevant places when users express preferences using different words or descriptions.
-
-**Solution:**
-
-Integrated Sentence Transformers to generate vector embeddings and Pinecone to perform semantic similarity search.
-
-This allows the application to retrieve relevant places based on the meaning of user queries.
-
-### Challenge 3: Synchronizing Structured Data and Vector Embeddings
-
-**Problem:**
-
-Travel information is maintained in DynamoDB, while its vector representations are stored separately in Pinecone.
-
-Changes to the source travel data require corresponding updates to the vector index.
-
-**Solution:**
-
-Separated data loading and vector indexing into dedicated API operations:
-
-- `/admin/load-data` – Loads curated travel information into DynamoDB.
-- `/index` – Generates embeddings and upserts them into Pinecone.
-
-This provides a structured approach to initial data setup and re-indexing.
-
-### Challenge 4: Managing Multiple Backend Services
-
-**Problem:**
-
-Combining authentication, database operations, user preference validation, and AI processing into a single backend would increase coupling and make maintenance more difficult.
-
-**Solution:**
-
-Designed four independent FastAPI microservices, each with its own dependencies, environment configuration, and API endpoints.
-
-This improves separation of responsibilities and makes individual services easier to maintain and debug.
-
-### Challenge 5: Integrating External Services
-
-**Problem:**
-
-The application depends on multiple external systems, including AWS DynamoDB, Pinecone, Groq, and Gmail SMTP, each requiring separate credentials and configurations.
-
-**Solution:**
-
-Maintained service-specific environment configurations using `.env` files and used Docker Compose to simplify application setup and execution.
-
-### Challenge 6: Implementing Authentication
-
-**Problem:**
-
-The application requires a mechanism to verify users during registration and authenticate them during subsequent requests.
-
-**Solution:**
-
-Implemented email OTP verification during registration and JWT-based authentication for login and protected profile retrieval.
-
----
 
 ## 7. API Reference
 
@@ -603,8 +525,336 @@ Through Travora, I gained practical experience in:
 - Containerizing applications using Docker Compose.
 
 ---
+## 14. Challenges Faced and Solutions
 
-## 14. Conclusion
+During the development of Travora, several challenges were encountered across database integration, authentication, RAG implementation, frontend integration, and environment configuration. The following section documents the actual errors, their root causes, and the solutions implemented.
+
+### 6.1 Database Service Challenges
+
+#### Challenge 1: Handling Inconsistent JSON Data Structures
+
+**Problem:**
+
+While loading curated city data into DynamoDB, the application encountered:
+
+```text
+AttributeError: 'str' object has no attribute 'get'
+```
+
+The root cause was an inconsistent JSON structure. Most city files contained a flat list of place objects, whereas `seoul_final.json` contained nested categories such as `attractions` and `restaurants`.
+
+The loader attempted to iterate over the dictionary directly, treating category names as place objects.
+
+**Solution:**
+
+Updated the data loader to detect whether the JSON root was a list or dictionary. For nested dictionaries, the loader extracts and flattens the lists before processing individual place records.
+
+Added type validation to skip invalid records and ensure that only dictionary objects are processed.
+
+#### Challenge 2: Stale Python Bytecode Causing Misleading Tracebacks
+
+**Problem:**
+
+After modifying the data loader, Python displayed incorrect traceback line numbers, pointing to code that was not responsible for the error.
+
+The issue was caused by stale `.pyc` bytecode files stored in `__pycache__`, resulting in misleading source-line mappings during hot reload.
+
+**Solution:**
+
+Cleared the existing `__pycache__` directories and restarted the FastAPI server to ensure Python loaded the updated source code correctly.
+
+```bash
+find . -type d -name __pycache__ -exec rm -rf {} +
+```
+
+#### Challenge 3: Missing AWS Dependencies in the Virtual Environment
+
+**Problem:**
+
+The database service failed with:
+
+```text
+ModuleNotFoundError: No module named 'boto3'
+```
+
+The dependencies had been installed before activating the virtual environment, causing them to be installed in the system Python rather than the environment used by the application.
+
+**Solution:**
+
+Activated the correct virtual environment before installing dependencies and verified that the packages were available to the Python interpreter running the service.
+
+#### Challenge 4: DynamoDB Reporting Successful Writes Without Persisting Data
+
+**Problem:**
+
+The `/admin/load-data` endpoint reported successful writes:
+
+```json
+{"written": 275}
+```
+
+However, querying DynamoDB returned no records.
+
+The root cause was that the `travel_data` table had not been created. Table initialization was previously performed only during FastAPI startup, which was bypassed when the loader was executed directly.
+
+**Solution:**
+
+Moved the table initialization check into the `load_all_cities()` function itself by calling `create_table_if_not_exists()` before writing records.
+
+This made the loader independent of the execution method and ensured the DynamoDB table existed before data insertion.
+
+---
+
+### 6.2 Authentication Service Challenges
+
+#### Challenge 5: Signup API Failing Due to CORS and SMTP Configuration
+
+**Problem:**
+
+The signup form displayed:
+
+```text
+Failed to fetch
+```
+
+The issue involved multiple interacting problems:
+
+- SMTP configuration failures during OTP delivery.
+- Stale Uvicorn processes running previous versions of the authentication service.
+- Vite automatically switching from port `5173` to `5174` because another development server was already running.
+- The CORS configuration only allowed requests from `http://localhost:5173`.
+
+As a result, browser requests from the new frontend port were blocked.
+
+**Solution:**
+
+- Removed the OTP functionality from the authentication signup flow.
+- Updated signup to create the user and return a JWT directly.
+- Replaced the hardcoded CORS origin with a localhost port regex.
+- Applied the CORS configuration consistently across all four backend services.
+
+Updated configuration:
+
+```python
+allow_origin_regex=r"http://localhost(:\d+)?"
+allow_credentials=False
+```
+
+This allowed the frontend to communicate with backend services across different localhost development ports.
+
+#### Challenge 6: Passlib and Bcrypt Compatibility Issues
+
+**Problem:**
+
+The authentication service encountered:
+
+```text
+AttributeError: module 'bcrypt' has no attribute '__about__'
+```
+
+The issue occurred because `passlib==1.7.4` relied on the `bcrypt.__about__.__version__` attribute, which was removed in bcrypt 4.x.
+
+**Solution:**
+
+Removed the incompatible Passlib and Bcrypt dependencies and replaced the password hashing implementation with Python's built-in `hashlib` and randomly generated salts.
+
+This eliminated the package compatibility issue and reduced external dependencies.
+
+**Note:** The implemented SHA-256 approach was a development workaround, not a production-grade password storage solution. Production authentication should use a dedicated password hashing algorithm such as Argon2id or bcrypt with appropriate configuration.
+
+#### Challenge 7: Frontend JSX Syntax Error After Removing OTP Verification
+
+**Problem:**
+
+After removing OTP verification from the signup flow, Vite reported:
+
+```text
+[plugin:vite:react-babel] Unexpected token (112:3)
+```
+
+The OTP-related JSX had been removed, but its surrounding fragment wrappers and conditional rendering syntax remained, resulting in invalid JSX.
+
+**Solution:**
+
+Removed the orphaned JSX fragment wrapper and unnecessary conditional closing syntax, leaving a valid and simplified component return structure.
+
+#### Challenge 8: HTTP 500 Errors Due to Stale Processes and Incorrect Environment Setup
+
+**Problem:**
+
+The signup API continued returning HTTP 500 errors even after changes were made to the authentication code.
+
+Two issues contributed to the problem:
+
+- Multiple Uvicorn processes were running simultaneously, with older processes continuing to serve outdated code.
+- The virtual environment had been recreated, leaving it without the required dependencies. Package installation through Git Bash activation was resolving to the system Python instead of the virtual environment.
+
+**Solution:**
+
+- Terminated stale Uvicorn processes running on port `8001`.
+- Reinstalled dependencies using the absolute path to the virtual environment's `pip.exe`.
+- Restarted the authentication service using the correct environment.
+
+#### Challenge 9: Handling Duplicate User Registration in DynamoDB
+
+**Problem:**
+
+When an existing email address was used during signup, DynamoDB raised:
+
+```text
+ConditionalCheckFailedException
+```
+
+This happened because the user creation operation included a condition requiring the email attribute not to exist.
+
+Although this behavior correctly prevented duplicate accounts, the exception was not initially handled properly by the API.
+
+**Solution:**
+
+Added explicit exception handling for DynamoDB's `ConditionalCheckFailedException` and converted it into an appropriate HTTP response.
+
+```python
+except ClientError as e:
+    code = e.response["Error"]["Code"]
+
+    if code == "ConditionalCheckFailedException":
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered"
+        )
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"DB write error: {code}"
+    )
+```
+
+This ensured duplicate registrations returned HTTP `409 Conflict` instead of an unhandled server error.
+
+---
+
+### 6.3 RAG Service Challenges
+
+#### Challenge 10: Groq and HTTPX Dependency Incompatibility
+
+**Problem:**
+
+The RAG service failed when initializing the Groq client with:
+
+```text
+TypeError: Client.__init__() got an unexpected keyword argument 'proxies'
+```
+
+The root cause was a compatibility issue between the installed Groq SDK and HTTPX.
+
+The older Groq SDK version (`0.9.0`) passed the `proxies` argument to `httpx.Client`, whereas HTTPX `0.28.0` and later removed support for that argument.
+
+**Solution:**
+
+Updated the Groq dependency requirement from:
+
+```text
+groq>=0.9.0
+```
+
+to:
+
+```text
+groq>=0.13.0
+```
+
+Then reinstalled the updated package inside the RAG service's virtual environment.
+
+This resolved the client initialization incompatibility.
+
+---
+
+### 6.4 Environment and Dependency Management Challenges
+
+#### Challenge 11: Windows Virtual Environment Activation Issues
+
+**Problem:**
+
+A recurring issue across the database, authentication, and RAG services was that packages appeared to install successfully but were unavailable when the application started.
+
+This was particularly noticeable when using Git Bash on Windows.
+
+The command:
+
+```bash
+source venv/Scripts/activate
+pip install -r requirements.txt
+```
+
+did not consistently resolve `pip` to the virtual environment's Python installation.
+
+As a result, dependencies were sometimes installed into the system Python rather than the service-specific environment.
+
+**Solution:**
+
+Used the absolute path to the virtual environment's `pip.exe` to ensure dependencies were installed into the correct environment.
+
+Example:
+
+```bash
+# Authentication Service
+"D:\ai trip itinerary planner\backend\auth-service\venv\Scripts\pip.exe" install -r requirements.txt
+
+# RAG Service
+"D:\ai trip itinerary planner\backend\rag\venv\Scripts\pip.exe" install -r requirements.txt
+
+# Database Service
+"D:\ai trip itinerary planner\backend\database\venv\Scripts\pip.exe" install -r requirements.txt
+```
+
+Alternatively, verified the active pip location before installing packages:
+
+```bash
+which pip
+```
+
+This helped prevent dependency installation into the wrong Python environment.
+
+---
+
+### 6.5 Summary of Challenges and Resolutions
+
+| # | Component | Challenge | Resolution |
+|---|---|---|---|
+| 1 | Database | Inconsistent city JSON structures | Added dynamic JSON structure detection and flattening |
+| 2 | Database | Misleading Python tracebacks | Cleared stale `__pycache__` files |
+| 3 | Database | Missing `boto3` dependency | Installed dependencies in the correct virtual environment |
+| 4 | Database | DynamoDB writes not persisting | Added table initialization inside the data loader |
+| 5 | Authentication | Signup failures caused by SMTP, CORS, and stale processes | Simplified signup and updated CORS configuration |
+| 6 | Authentication | Passlib and Bcrypt incompatibility | Replaced the dependency with a `hashlib` implementation |
+| 7 | Frontend | Invalid JSX after OTP removal | Removed orphaned JSX fragments and conditional syntax |
+| 8 | Authentication | HTTP 500 due to stale processes and empty virtual environment | Restarted the correct process and reinstalled dependencies |
+| 9 | Authentication | Duplicate signup exception | Added explicit DynamoDB exception handling with HTTP 409 |
+| 10 | RAG | Groq and HTTPX incompatibility | Updated the Groq SDK dependency |
+| 11 | All Services | Windows virtual environment package installation issues | Used the virtual environment's absolute `pip.exe` path |
+
+---
+
+### Key Takeaways
+
+Working through these issues provided practical experience in debugging and maintaining a multi-service application.
+
+The development process strengthened my understanding of:
+
+- Handling inconsistent JSON structures and building robust ETL workflows.
+- Debugging Python runtime issues and stale bytecode.
+- Integrating AWS DynamoDB using Boto3.
+- Managing dependencies across isolated Python environments.
+- Troubleshooting CORS, SMTP, and frontend-backend communication.
+- Implementing exception handling for database operations.
+- Resolving dependency compatibility issues in AI SDK integrations.
+- Managing multiple Uvicorn processes and service configurations.
+- Maintaining independent environments across a microservices architecture.
+
+These challenges highlighted the importance of dependency management, environment consistency, proper error handling, and systematic debugging when developing full-stack AI applications.
+
+---
+## 15. Conclusion
 
 Travora demonstrates how Generative AI and modern backend technologies can be combined to build an intelligent travel planning application.
 
