@@ -1,6 +1,6 @@
-# Voyonata — AI Trip Itinerary Planner
+# Travora — AI Trip Itinerary Planner
 
-Voyonata is a full-stack AI-powered travel planning app. Tell it where you want to go, your dates, budget, and interests — it retrieves real places from a curated database, runs them through a Groq LLM, and returns a day-by-day itinerary tailored to you.
+Travora is a full-stack AI-powered travel planning app. Tell it where you want to go, your dates, budget, and interests — it retrieves real places from a curated database, runs them through a Groq LLM, and returns a day-by-day itinerary tailored to you.
 
 ---
 
